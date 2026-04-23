@@ -12,6 +12,9 @@ const planSchema = z.object({
   plan: z.array(z.string().min(1)).min(1)
 });
 
+const MAX_MEMORY_MESSAGES = 8;
+const MAX_MEMORY_CONTENT_CHARS = 240;
+
 function normalizePlanItems(items: string[]): string[] {
   return items
     .map((item) => item.trim())
@@ -57,9 +60,14 @@ function buildHistoryLines(request: RunAgentRequest): string[] {
     return [];
   }
 
-  return request.history.map((message) => {
+  return request.history.slice(-MAX_MEMORY_MESSAGES).map((message) => {
     const role = message.role === "user" ? "用户" : "助手";
-    return `${role}：${message.content}`;
+    const content =
+      message.content.length > MAX_MEMORY_CONTENT_CHARS
+        ? `${message.content.slice(0, MAX_MEMORY_CONTENT_CHARS)}...`
+        : message.content;
+
+    return `${role}：${content}`;
   });
 }
 

@@ -129,6 +129,7 @@ const TASKS = [
 const app = document.querySelector("#app");
 const runtimeConfig = window.__AGENT_SANDBOX_CONFIG__ || {};
 const API_BASE = String(runtimeConfig.apiBase || "").replace(/\/$/, "");
+const MAX_HISTORY_MESSAGES = 8;
 
 const state = {
   selectedTask: "basic_qa",
@@ -490,7 +491,7 @@ async function handleRun() {
   render();
 
   try {
-    const payloadHistory = state.config.memory === "short-term" ? state.history : [];
+    const payloadHistory = state.config.memory === "short-term" ? state.history.slice(-MAX_HISTORY_MESSAGES) : [];
     const response = await fetch(`${API_BASE}/api/run-agent`, {
       method: "POST",
       headers: {
@@ -515,6 +516,7 @@ async function handleRun() {
         { role: "user", content: state.input },
         { role: "assistant", content: payload.output }
       );
+      state.history = state.history.slice(-MAX_HISTORY_MESSAGES);
     }
   } catch (error) {
     state.error = error instanceof Error ? error.message : "运行失败";
