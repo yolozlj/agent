@@ -58,6 +58,57 @@ function availableTools(request: RunAgentRequest): ToolName[] {
   return request.config.enabledTools;
 }
 
+function inferWeatherCityFromInput(input: string): string | null {
+  const compact = input.replace(/\s+/g, "").replace(/[？?！!。.,，]/g, "");
+  const normalized = compact.replace(
+    /^(今天|现在|当前|请问|请帮我|帮我|麻烦你|想知道|查一下|查查|看看|告诉我)+/u,
+    ""
+  );
+
+  const patterns = [
+    /^([A-Za-z\u4e00-\u9fff]{2,20}?)(?:市|区|县|盟|自治州|特别行政区)?(?:今天|当前|现在)?天气/u,
+    /([A-Za-z\u4e00-\u9fff]{2,20}?)(?:市|区|县|盟|自治州|特别行政区)?(?:今天|当前|现在)?天气/u
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (!match) {
+      continue;
+    }
+
+    const city = match[1]?.replace(/(今天|当前|现在)$/u, "").trim();
+    if (city) {
+      return city;
+    }
+  }
+
+  return null;
+}
+
+function normalizeToolInput(tool: ToolName, input: Record<string, unknown>, userInput: string): Record<string, unknown> {
+  if (tool !== "getWeather") {
+    return input;
+  }
+
+  const city = String(input.city ?? input.location ?? "").trim();
+  if (city) {
+    return {
+      ...input,
+      city
+    };
+  }
+
+  const inferredCity = inferWeatherCityFromInput(userInput);
+  if (!inferredCity) {
+    return input;
+  }
+
+  return {
+    ...input,
+    city: inferredCity
+  };
+}
+
 export async function runAgent(request: RunAgentRequest): Promise<RunAgentResponse> {
   const preset = TASK_PRESETS[request.task];
   const trace: TraceStep[] = [
@@ -176,24 +227,37 @@ export async function runAgent(request: RunAgentRequest): Promise<RunAgentRespon
     }
 
     if (!enabledTools.includes(action.tool)) {
+      const warning = `模型尝试调用 ${action.tool}，但当前配置没有启用它。`;
       trace.push({
         type: "warning",
         title: "工具不可用",
-        content: `模型尝试调用 ${action.tool}，但当前配置没有启用它。`
+        content: warning
       });
-      break;
+      observations.push(
+        JSON.stringify(
+          {
+            tool: action.tool,
+            warning
+          },
+          null,
+          2
+        )
+      );
+      continue;
     }
+
+    const normalizedInput = normalizeToolInput(action.tool, action.input, request.input);
 
     trace.push({
       type: "tool_call",
       title: `第 ${step} 步调用工具`,
       step,
       tool: action.tool,
-      input: action.input
+      input: normalizedInput
     });
 
     try {
-      const output = await toolRegistry[action.tool](action.input, {
+      const output = await toolRegistry[action.tool](normalizedInput, {
         timeoutMs: env.WEB_FETCH_TIMEOUT_MS
       });
 
@@ -216,12 +280,24 @@ export async function runAgent(request: RunAgentRequest): Promise<RunAgentRespon
         )
       );
     } catch (error) {
+      const warning = error instanceof Error ? error.message : "Unknown tool error.";
       trace.push({
         type: "warning",
         title: "工具调用失败",
-        content: error instanceof Error ? error.message : "Unknown tool error."
+        content: warning
       });
-      break;
+      observations.push(
+        JSON.stringify(
+          {
+            tool: action.tool,
+            input: normalizedInput,
+            warning
+          },
+          null,
+          2
+        )
+      );
+      continue;
     }
   }
 
@@ -238,4 +314,3 @@ export async function runAgent(request: RunAgentRequest): Promise<RunAgentRespon
     teachingExplanations: buildTeachingExplanations(request, trace)
   };
 }
-

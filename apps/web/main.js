@@ -478,10 +478,15 @@ function collectConfig() {
   };
 }
 
+function clearOutputState() {
+  state.result = null;
+  state.error = "";
+}
+
 async function handleRun() {
   collectConfig();
+  clearOutputState();
   state.running = true;
-  state.error = "";
   render();
 
   try {
@@ -535,16 +540,13 @@ function bindEvents() {
   });
 
   app.querySelector("[data-action='clear-session']").addEventListener("click", () => {
-    state.history = [];
-    state.result = null;
-    state.error = "";
+    clearOutputState();
     render();
   });
 
   app.querySelector("[data-action='reset-input']").addEventListener("click", () => {
     state.input = getTask(state.selectedTask).placeholder;
-    state.result = null;
-    state.error = "";
+    clearOutputState();
     render();
   });
 

@@ -78,6 +78,7 @@ export function buildActionPrompt(params: {
   "input": {},
   "answer": "当 type=final 时返回最终答案"
 }`,
+    "规则：如果调用 getWeather，input 里必须包含 city 字段；如果用户问题里已经给出城市，就直接提取填入 city。",
     "规则：如果工具不可用，不要假装调用工具，而是直接给出带边界说明的 final 回答。"
   ].join("\n\n");
 }
@@ -106,4 +107,3 @@ export function isAction(value: unknown): value is Action {
 
   return false;
 }
-

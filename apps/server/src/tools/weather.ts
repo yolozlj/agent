@@ -25,8 +25,12 @@ const WEATHER_CODE_MAP: Record<number, string> = {
 type GeocodingResponse = {
   results?: Array<{
     name: string;
+    country_code?: string;
     country?: string;
     admin1?: string;
+    admin2?: string;
+    feature_code?: string;
+    population?: number;
     latitude: number;
     longitude: number;
   }>;
@@ -47,6 +51,158 @@ type ForecastResponse = {
   };
 };
 
+type GeocodingPlace = NonNullable<GeocodingResponse["results"]>[number];
+
+const DIRECT_CITY_ALIASES: Record<string, string[]> = {
+  上海: ["上海"],
+  北京: ["北京市"],
+  天津: ["天津市"],
+  重庆: ["重庆市"],
+  香港: ["香港"],
+  澳门: ["澳门"]
+};
+
+async function fetchJsonWithRetry<T>(url: URL, timeoutMs: number, label: string): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+
+      if (!response.ok) {
+        throw new Error(`${label} failed with ${response.status}.`);
+      }
+
+      return (await response.json()) as T;
+    } catch (error) {
+      lastError = error;
+
+      if (attempt === 2) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(`${label} request failed: ${detail}`);
+      }
+    }
+  }
+
+  throw new Error(`${label} request failed: ${String(lastError)}`);
+}
+
+function isChineseText(value: string): boolean {
+  return /[\u4e00-\u9fff]/.test(value);
+}
+
+function normalizePlaceName(value: string | undefined): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/(特别行政区|自治州|地区|盟|市|区|县)$/u, "");
+}
+
+function buildGeoQueries(city: string): string[] {
+  const cleaned = city.trim();
+  const queries = new Set<string>();
+  const directAliases = DIRECT_CITY_ALIASES[cleaned];
+
+  if (directAliases && directAliases.length > 0) {
+    for (const alias of directAliases) {
+      queries.add(alias);
+    }
+  } else {
+    queries.add(cleaned);
+  }
+
+  if (isChineseText(cleaned)) {
+    const base = normalizePlaceName(cleaned);
+
+    if (base && base !== cleaned) {
+      queries.add(base);
+    }
+
+    if (
+      base &&
+      !/(市|区|县|盟|自治州|地区|特别行政区)$/u.test(cleaned) &&
+      !directAliases
+    ) {
+      queries.add(`${base}市`);
+    }
+  }
+
+  return [...queries];
+}
+
+function scorePlace(place: GeocodingPlace, requestedCity: string, query: string): number {
+  const requestedBase = normalizePlaceName(requestedCity);
+  const queryBase = normalizePlaceName(query);
+  const placeName = String(place.name ?? "").trim();
+  const placeBase = normalizePlaceName(placeName);
+
+  let score = 0;
+
+  if (place.country_code === "CN") {
+    score += 100;
+  }
+
+  if (placeName === query) {
+    score += 220;
+  }
+
+  if (placeName === requestedCity) {
+    score += 180;
+  }
+
+  if (placeBase && placeBase === requestedBase) {
+    score += 160;
+  }
+
+  if (placeBase && placeBase === queryBase) {
+    score += 120;
+  }
+
+  if (place.feature_code === "PPLC") {
+    score += 90;
+  } else if (place.feature_code === "PPLA") {
+    score += 70;
+  } else if (place.feature_code === "PPLA2") {
+    score += 50;
+  }
+
+  if (typeof place.population === "number") {
+    score += Math.min(place.population / 100000, 60);
+  }
+
+  return score;
+}
+
+async function findBestPlace(city: string, timeoutMs: number) {
+  const queries = buildGeoQueries(city);
+  let bestPlace: GeocodingPlace | undefined;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const query of queries) {
+    const geoUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
+    geoUrl.searchParams.set("name", query);
+    geoUrl.searchParams.set("count", "10");
+    geoUrl.searchParams.set("language", "zh");
+    geoUrl.searchParams.set("format", "json");
+
+    if (isChineseText(query)) {
+      geoUrl.searchParams.set("countryCode", "CN");
+    }
+
+    const geoData = await fetchJsonWithRetry<GeocodingResponse>(geoUrl, timeoutMs, "Geocoding");
+    for (const place of geoData.results ?? []) {
+      const score = scorePlace(place, city, query);
+      if (score > bestScore) {
+        bestScore = score;
+        bestPlace = place;
+      }
+    }
+  }
+
+  return bestPlace;
+}
+
 export async function getWeather(
   input: Record<string, unknown>,
   context: ToolContext
@@ -56,21 +212,7 @@ export async function getWeather(
     throw new Error("Weather tool requires a city.");
   }
 
-  const geoUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
-  geoUrl.searchParams.set("name", city);
-  geoUrl.searchParams.set("count", "1");
-  geoUrl.searchParams.set("language", "zh");
-  geoUrl.searchParams.set("format", "json");
-
-  const geoResponse = await fetch(geoUrl, {
-    signal: AbortSignal.timeout(context.timeoutMs)
-  });
-  if (!geoResponse.ok) {
-    throw new Error(`Geocoding failed with ${geoResponse.status}.`);
-  }
-
-  const geoData = (await geoResponse.json()) as GeocodingResponse;
-  const place = geoData.results?.[0];
+  const place = await findBestPlace(city, context.timeoutMs);
   if (!place) {
     throw new Error(`Could not find city: ${city}`);
   }
@@ -89,14 +231,11 @@ export async function getWeather(
   forecastUrl.searchParams.set("forecast_days", "1");
   forecastUrl.searchParams.set("timezone", "auto");
 
-  const forecastResponse = await fetch(forecastUrl, {
-    signal: AbortSignal.timeout(context.timeoutMs)
-  });
-  if (!forecastResponse.ok) {
-    throw new Error(`Weather forecast failed with ${forecastResponse.status}.`);
-  }
-
-  const forecast = (await forecastResponse.json()) as ForecastResponse;
+  const forecast = await fetchJsonWithRetry<ForecastResponse>(
+    forecastUrl,
+    context.timeoutMs,
+    "Weather forecast"
+  );
   const current = forecast.current;
   const daily = forecast.daily;
   if (!current || !daily) {
