@@ -9,8 +9,15 @@ import { buildActionPrompt, buildTeachingExplanations, isAction } from "./teachi
 import { env } from "../lib/config.js";
 
 const planSchema = z.object({
-  plan: z.array(z.string().min(1)).min(1).max(6)
+  plan: z.array(z.string().min(1)).min(1)
 });
+
+function normalizePlanItems(items: string[]): string[] {
+  return items
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 6);
+}
 
 async function createPlan(request: RunAgentRequest): Promise<string[]> {
   const preset = TASK_PRESETS[request.task];
@@ -36,7 +43,13 @@ async function createPlan(request: RunAgentRequest): Promise<string[]> {
   ]);
 
   const parsed = planSchema.parse(JSON.parse(extractJsonObject(raw)));
-  return parsed.plan;
+  const normalized = normalizePlanItems(parsed.plan);
+
+  if (normalized.length === 0) {
+    throw new Error("Planner returned an empty plan.");
+  }
+
+  return normalized;
 }
 
 function buildHistoryLines(request: RunAgentRequest): string[] {
@@ -130,12 +143,20 @@ export async function runAgent(request: RunAgentRequest): Promise<RunAgentRespon
 
   let planItems: string[] = [];
   if (request.config.planner !== "none") {
-    planItems = await createPlan(request);
-    trace.push({
-      type: "plan",
-      title: "规划任务",
-      items: planItems
-    });
+    try {
+      planItems = await createPlan(request);
+      trace.push({
+        type: "plan",
+        title: "规划任务",
+        items: planItems
+      });
+    } catch (error) {
+      trace.push({
+        type: "warning",
+        title: "规划任务失败",
+        content: error instanceof Error ? error.message : "Unknown planner error."
+      });
+    }
   }
 
   const enabledTools = availableTools(request);
