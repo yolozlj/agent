@@ -32,11 +32,10 @@
 
 ### GitHub Pages
 
-1. 将项目放入 GitHub 仓库，并确保默认分支为 `main`。
-2. 仓库中已包含 GitHub Actions 工作流：[.github/workflows/deploy-pages.yml](/Users/zhoulijie/AI探索/agent%20教学/.github/workflows/deploy-pages.yml:1)
-3. 前端发布目录为 `apps/web`，工作流会自动复制到 `dist` 并发布到 GitHub Pages。
+1. 将项目推送到 GitHub 仓库，并确保默认分支为 `main`。
+2. GitHub Pages 可直接使用 `main` 分支根目录发布。
+3. 仓库根目录的 [index.html](/Users/zhoulijie/AI探索/agent%20教学/index.html:1) 会自动跳转到前端目录 [apps/web](/Users/zhoulijie/AI探索/agent%20教学/apps/web/index.html:1)。
 4. 当前 [apps/web/config.js](/Users/zhoulijie/AI探索/agent%20教学/apps/web/config.js:1) 已默认指向阿里云函数公网地址。
-5. 在 GitHub 仓库设置里打开 Pages，并把 Source 设为 `GitHub Actions`。
 
 ### 阿里云函数计算
 
