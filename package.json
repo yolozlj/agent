@@ -1,0 +1,15 @@
+{
+  "name": "agent-sandbox",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/server"
+  ],
+  "scripts": {
+    "dev:server": "npm --workspace apps/server run dev",
+    "build": "npm run build --workspace apps/server",
+    "prepare:fc": "sh scripts/prepare-fc-deploy.sh",
+    "lint": "npm run lint --workspace apps/server",
+    "typecheck": "npm run typecheck --workspace apps/server"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@agent-sandbox/server",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "npm run build && node dist/server/dev.js",
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.5.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "jsdom": "^26.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

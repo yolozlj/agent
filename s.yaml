@@ -1,0 +1,40 @@
+edition: 3.0.0
+name: agent-sandbox-api
+
+vars:
+  region: cn-hangzhou
+  service_name: agent-sandbox-service
+  function_name: agent-sandbox-api
+
+resources:
+  agentSandboxApi:
+    component: fc3
+    props:
+      region: ${vars.region}
+      serviceName: ${vars.service_name}
+      functionName: ${vars.function_name}
+      description: Agent Sandbox backend API
+      runtime: nodejs20
+      cpu: 0.35
+      timeout: 60
+      memorySize: 512
+      diskSize: 512
+      internetAccess: true
+      code: ./.fc-deploy
+      handler: apps/server/dist/fc.handler
+      environmentVariables:
+        DEEPSEEK_API_KEY: ${env(DEEPSEEK_API_KEY)}
+        LLM_BASE_URL: ${env(LLM_BASE_URL)}
+        LLM_MODEL: ${env(LLM_MODEL)}
+        ALLOWED_WEB_PROTOCOLS: ${env(ALLOWED_WEB_PROTOCOLS)}
+        WEB_FETCH_TIMEOUT_MS: ${env(WEB_FETCH_TIMEOUT_MS)}
+      triggers:
+        - triggerName: httpTrigger
+          triggerType: http
+          triggerConfig:
+            methods:
+              - GET
+              - POST
+              - OPTIONS
+            authType: anonymous
+            disableURLInternet: false
