@@ -84,6 +84,7 @@ export function buildActionPrompt(params: {
     "如果你需要获取真实外部信息，就返回 tool 动作。",
     "实时天气、降水、气温、带伞、穿衣建议应优先使用 getWeather。",
     "用户提供 URL 或要求总结/阅读网页时，应优先使用 readWebPage。",
+    "会话历史就是当前可用的短期记忆；如果用户询问之前问过什么或要求继承上下文，请依据会话历史回答，不要声称无法访问历史。",
     "如果信息已经足够，就返回 final 动作。",
     `JSON Schema:
 {
