@@ -9,6 +9,14 @@ export type TaskPreset = {
 };
 
 export const TASK_PRESETS: Record<TaskId, TaskPreset> = {
+  agent: {
+    title: "Agent",
+    description: "根据用户输入自动判断是否需要工具、规划、记忆和循环推进。",
+    defaultInput: "今天北京天气怎么样？下午出门要不要带伞？",
+    recommendedTools: ["getWeather", "readWebPage"],
+    recommendedPrompt:
+      "你是一个教学型 Agent。你需要根据任务判断是否调用工具、是否继续循环，并在可用工具返回后再生成答案。"
+  },
   basic_qa: {
     title: "基础问答",
     description: "真实 LLM 单步回答，帮助用户理解普通对话与 Agent 的差异。",
@@ -45,4 +53,3 @@ export const TASK_PRESETS: Record<TaskId, TaskPreset> = {
     recommendedPrompt: "你是一个写作助手。需要根据同一会话里的历史要求持续修改内容。"
   }
 };
-

@@ -6,10 +6,23 @@ export function buildTeachingExplanations(
 ): string[] {
   const explanations: string[] = [];
   const toolCalls = trace.filter((step) => step.type === "tool_call");
+  const routedTools = trace.find((step) => step.type === "router")?.tools ?? [];
   const hasWarnings = trace.some((step) => step.type === "warning");
+
+  if (!request.config.toolsEnabled && request.task === "agent") {
+    explanations.push("Agent 模式下关闭工具后，模型只能基于已有知识回答，遇到实时信息或网页内容时会出现能力边界。");
+  }
 
   if (!request.config.toolsEnabled && (request.task === "weather" || request.task === "web_reader")) {
     explanations.push("当前任务依赖外部世界的数据。如果不开工具，模型只能依据已有知识猜测，容易出现幻觉。");
+  }
+
+  if (request.task === "agent" && request.config.toolsEnabled) {
+    explanations.push(
+      routedTools.length > 0
+        ? `系统先根据输入匹配候选工具：${routedTools.join(", ")}，再让模型决定是否调用。`
+        : "系统没有匹配到明显候选工具，因此这次更接近普通问答或规划任务。"
+    );
   }
 
   if (request.config.toolsEnabled && toolCalls.length > 0) {
@@ -69,6 +82,8 @@ export function buildActionPrompt(params: {
     `输出格式偏好：${params.config.output}`,
     "你必须只返回一个 JSON 对象，不要输出 Markdown。",
     "如果你需要获取真实外部信息，就返回 tool 动作。",
+    "实时天气、降水、气温、带伞、穿衣建议应优先使用 getWeather。",
+    "用户提供 URL 或要求总结/阅读网页时，应优先使用 readWebPage。",
     "如果信息已经足够，就返回 final 动作。",
     `JSON Schema:
 {
@@ -79,6 +94,7 @@ export function buildActionPrompt(params: {
   "answer": "当 type=final 时返回最终答案"
 }`,
     "规则：如果调用 getWeather，input 里必须包含 city 字段；如果用户问题里已经给出城市，就直接提取填入 city。",
+    "规则：如果调用 readWebPage，input 里必须包含 url 字段；如果用户问题里已经给出链接，就直接提取填入 url。",
     "规则：如果工具不可用，不要假装调用工具，而是直接给出带边界说明的 final 回答。"
   ].join("\n\n");
 }

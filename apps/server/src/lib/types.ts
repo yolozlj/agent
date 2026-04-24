@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const taskIdSchema = z.enum([
+  "agent",
   "basic_qa",
   "weather",
   "web_reader",
@@ -8,7 +9,7 @@ export const taskIdSchema = z.enum([
   "memory"
 ]);
 
-export const plannerModeSchema = z.enum(["none", "simple", "step-by-step"]);
+export const plannerModeSchema = z.enum(["none", "simple", "auto", "step-by-step"]);
 export const memoryModeSchema = z.enum(["off", "short-term"]);
 export const outputFormatSchema = z.enum(["text", "json"]);
 export const toolNameSchema = z.enum(["getWeather", "readWebPage"]);
@@ -61,6 +62,12 @@ export type TraceStep =
       items: string[];
     }
   | {
+      type: "router";
+      title: string;
+      tools: ToolName[];
+      content: string;
+    }
+  | {
       type: "decision";
       title: string;
       content: string;
@@ -100,4 +107,3 @@ export type RunAgentResponse = {
 export type ToolContext = {
   timeoutMs: number;
 };
-

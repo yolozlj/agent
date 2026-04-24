@@ -76,7 +76,44 @@ function availableTools(request: RunAgentRequest): ToolName[] {
     return [];
   }
 
-  return request.config.enabledTools;
+  if (request.task !== "agent") {
+    return request.config.enabledTools;
+  }
+
+  return routeCandidateTools(request.input, request.config.enabledTools);
+}
+
+function routeCandidateTools(input: string, enabledTools: ToolName[]): ToolName[] {
+  const candidates = new Set<ToolName>();
+  const normalized = input.toLowerCase();
+
+  if (
+    enabledTools.includes("getWeather") &&
+    /(天气|气温|温度|降水|下雨|带伞|穿什么|冷不冷|热不热|weather|rain|umbrella)/iu.test(normalized)
+  ) {
+    candidates.add("getWeather");
+  }
+
+  if (
+    enabledTools.includes("readWebPage") &&
+    (extractUrlFromInput(input) || /(网页|链接|网址|页面|文章|总结这个|阅读这个|read|url|website|webpage)/iu.test(normalized))
+  ) {
+    candidates.add("readWebPage");
+  }
+
+  return [...candidates];
+}
+
+function shouldCreatePlan(request: RunAgentRequest): boolean {
+  if (request.config.planner === "none") {
+    return false;
+  }
+
+  if (request.config.planner === "simple" || request.config.planner === "step-by-step") {
+    return true;
+  }
+
+  return /(规划|计划|行程|安排|步骤|方案|拆解|路线|roadmap|plan)/iu.test(request.input) || request.input.length >= 48;
 }
 
 function inferWeatherCityFromInput(input: string): string | null {
@@ -106,7 +143,24 @@ function inferWeatherCityFromInput(input: string): string | null {
   return null;
 }
 
+function extractUrlFromInput(input: string): string | null {
+  const match = input.match(/https?:\/\/[^\s"'<>，。！？)）]+/iu);
+  return match?.[0] ?? null;
+}
+
 function normalizeToolInput(tool: ToolName, input: Record<string, unknown>, userInput: string): Record<string, unknown> {
+  if (tool === "readWebPage") {
+    const url = String(input.url ?? "").trim();
+    const inferredUrl = url || extractUrlFromInput(userInput);
+
+    return inferredUrl
+      ? {
+          ...input,
+          url: inferredUrl
+        }
+      : input;
+  }
+
   if (tool !== "getWeather") {
     return input;
   }
@@ -120,14 +174,12 @@ function normalizeToolInput(tool: ToolName, input: Record<string, unknown>, user
   }
 
   const inferredCity = inferWeatherCityFromInput(userInput);
-  if (!inferredCity) {
-    return input;
-  }
-
-  return {
-    ...input,
-    city: inferredCity
-  };
+  return inferredCity
+    ? {
+        ...input,
+        city: inferredCity
+      }
+    : input;
 }
 
 export async function runAgent(request: RunAgentRequest): Promise<RunAgentResponse> {
@@ -149,8 +201,21 @@ export async function runAgent(request: RunAgentRequest): Promise<RunAgentRespon
     });
   }
 
+  const enabledTools = availableTools(request);
+  if (request.task === "agent" && request.config.toolsEnabled) {
+    trace.push({
+      type: "router",
+      title: "自动匹配候选工具",
+      tools: enabledTools,
+      content:
+        enabledTools.length > 0
+          ? `根据输入匹配到候选工具：${enabledTools.join(", ")}`
+          : "当前输入没有明显匹配到需要调用的工具。"
+    });
+  }
+
   let planItems: string[] = [];
-  if (request.config.planner !== "none") {
+  if (shouldCreatePlan(request)) {
     try {
       planItems = await createPlan(request);
       trace.push({
@@ -167,7 +232,6 @@ export async function runAgent(request: RunAgentRequest): Promise<RunAgentRespon
     }
   }
 
-  const enabledTools = availableTools(request);
   const observations: string[] = [];
 
   for (let step = 1; step <= request.config.maxSteps; step += 1) {

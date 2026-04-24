@@ -1,11 +1,10 @@
-const TASKS = [
-  {
-    id: "basic_qa",
-    title: "基础问答",
-    summary: "真实 LLM 单步回答，对比普通对话与 Agent 的区别。",
+const MODES = {
+  simple_qa: {
+    id: "simple_qa",
+    title: "简单问答",
+    task: "basic_qa",
     placeholder: "请用通俗语言解释什么是向量数据库。",
-    allowedTools: [],
-    recommended: {
+    config: {
       systemPrompt: "",
       toolsEnabled: false,
       enabledTools: [],
@@ -13,116 +12,55 @@ const TASKS = [
       memory: "off",
       maxSteps: 3,
       output: "text"
-    },
-    risky: {
-      systemPrompt: "请尽快回答，不必说明边界。",
-      toolsEnabled: false,
-      enabledTools: [],
-      planner: "step-by-step",
+    }
+  },
+  agent: {
+    id: "agent",
+    title: "Agent",
+    task: "agent",
+    placeholder: "今天北京天气怎么样？下午出门要不要带伞？",
+    config: {
+      systemPrompt: "根据用户任务自动判断是否需要工具、规划和记忆。",
+      toolsEnabled: true,
+      enabledTools: ["getWeather", "readWebPage"],
+      planner: "auto",
       memory: "short-term",
-      maxSteps: 10,
+      maxSteps: 5,
       output: "text"
     }
+  }
+};
+
+const EXAMPLES = [
+  {
+    id: "simple",
+    label: "简单问答",
+    mode: "simple_qa",
+    input: "请用通俗语言解释什么是向量数据库。"
   },
   {
     id: "weather",
-    title: "实时天气",
-    summary: "通过真实天气工具查询实时数据，观察工具如何改变回答可信度。",
-    placeholder: "今天上海天气怎么样？我下午出门要不要带伞？",
-    allowedTools: ["getWeather"],
-    recommended: {
-      systemPrompt: "涉及天气时必须先查询真实天气，再给建议。",
-      toolsEnabled: true,
-      enabledTools: ["getWeather"],
-      planner: "simple",
-      memory: "off",
-      maxSteps: 5,
-      output: "text"
-    },
-    risky: {
-      systemPrompt: "直接回答，不要承认不知道。",
-      toolsEnabled: false,
-      enabledTools: [],
-      planner: "none",
-      memory: "off",
-      maxSteps: 3,
-      output: "text"
-    }
+    label: "天气咨询",
+    mode: "agent",
+    input: "今天北京天气怎么样？下午出门要不要带伞？"
   },
   {
-    id: "web_reader",
-    title: "网页读取",
-    summary: "先读取公开网页，再基于正文做总结。",
-    placeholder: "请阅读 https://example.com 并总结重点。",
-    allowedTools: ["readWebPage"],
-    recommended: {
-      systemPrompt: "用户给出网页时必须先读取，再总结。",
-      toolsEnabled: true,
-      enabledTools: ["readWebPage"],
-      planner: "simple",
-      memory: "off",
-      maxSteps: 5,
-      output: "text"
-    },
-    risky: {
-      systemPrompt: "你可以直接假设网页内容。",
-      toolsEnabled: false,
-      enabledTools: [],
-      planner: "none",
-      memory: "off",
-      maxSteps: 3,
-      output: "text"
-    }
+    id: "web",
+    label: "网页总结",
+    mode: "agent",
+    input: "请阅读 https://example.com 并总结重点。"
   },
   {
-    id: "planner",
-    title: "规划任务",
-    summary: "通过 plan 拆分复杂任务，观察 loop 如何推进。",
-    placeholder: "帮我规划一个 2 天苏州旅行行程，兼顾园林、美食和轻松节奏。",
-    allowedTools: [],
-    recommended: {
-      systemPrompt: "先拆分目标，再生成最终答案。",
-      toolsEnabled: false,
-      enabledTools: [],
-      planner: "simple",
-      memory: "off",
-      maxSteps: 5,
-      output: "text"
-    },
-    risky: {
-      systemPrompt: "一步完成所有内容。",
-      toolsEnabled: false,
-      enabledTools: [],
-      planner: "none",
-      memory: "off",
-      maxSteps: 3,
-      output: "text"
-    }
+    id: "travel",
+    label: "旅行规划",
+    mode: "agent",
+    input: "帮我规划一个 2 天苏州旅行行程，兼顾园林、美食和轻松节奏。"
   },
   {
     id: "memory",
-    title: "多轮记忆",
-    summary: "把历史上下文带入下一轮，展示记忆既有用也有风险。",
-    placeholder: "帮我写一段团队团建通知，语气轻松一些。",
-    allowedTools: [],
-    recommended: {
-      systemPrompt: "请持续继承会话里的历史要求。",
-      toolsEnabled: false,
-      enabledTools: [],
-      planner: "simple",
-      memory: "short-term",
-      maxSteps: 5,
-      output: "text"
-    },
-    risky: {
-      systemPrompt: "忽略历史，只看当前输入。",
-      toolsEnabled: false,
-      enabledTools: [],
-      planner: "none",
-      memory: "off",
-      maxSteps: 3,
-      output: "text"
-    }
+    label: "记忆回顾",
+    mode: "agent",
+    input: "我今天问过你哪些问题？"
   }
 ];
 
@@ -132,9 +70,9 @@ const API_BASE = String(runtimeConfig.apiBase || "").replace(/\/$/, "");
 const MAX_HISTORY_MESSAGES = 8;
 
 const state = {
-  selectedTask: "basic_qa",
-  config: structuredClone(TASKS[0].recommended),
-  input: TASKS[0].placeholder,
+  mode: "agent",
+  config: structuredClone(MODES.agent.config),
+  input: MODES.agent.placeholder,
   history: [],
   result: null,
   error: "",
@@ -149,39 +87,75 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function getTask(taskId) {
-  return TASKS.find((task) => task.id === taskId);
+function getMode(modeId = state.mode) {
+  return MODES[modeId];
 }
 
-function setTask(taskId) {
-  const task = getTask(taskId);
-  state.selectedTask = taskId;
-  state.config = structuredClone(task.recommended);
-  state.input = task.placeholder;
-  state.history = [];
+function isAgentMode() {
+  return state.mode === "agent";
+}
+
+function setMode(modeId, options = {}) {
+  const mode = getMode(modeId);
+  state.mode = mode.id;
+  state.config = structuredClone(mode.config);
+  state.input = options.keepInput ? state.input : mode.placeholder;
   state.result = null;
   state.error = "";
   render();
 }
 
-function renderScenarioOptions() {
-  return TASKS.map(
-    (task) => `<option value="${task.id}" ${task.id === state.selectedTask ? "selected" : ""}>${task.title}</option>`
-  ).join("");
+function applyExample(exampleId) {
+  const example = EXAMPLES.find((item) => item.id === exampleId);
+  if (!example) {
+    return;
+  }
+
+  const previousInput = state.input;
+  setMode(example.mode, { keepInput: true });
+  state.input = example.input || previousInput;
+
+  if (example.id === "memory") {
+    state.config.memory = "short-term";
+  }
+
+  clearOutputState();
+  render();
 }
 
-function renderToolChips(task) {
+function renderSegmented(name, items, value, disabled = false) {
+  return `
+    <div class="segmented" role="group" aria-label="${escapeHtml(name)}">
+      ${items
+        .map(
+          (item) => `
+            <button
+              class="segment ${item.value === value ? "segment-active" : ""}"
+              type="button"
+              data-segment="${escapeHtml(name)}"
+              data-value="${escapeHtml(item.value)}"
+              ${disabled ? "disabled" : ""}
+            >
+              ${escapeHtml(item.label)}
+            </button>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderToolChips() {
   return ["getWeather", "readWebPage"]
     .map((tool) => {
-      const allowed = task.allowedTools.includes(tool);
       const checked = state.config.enabledTools.includes(tool);
       return `
-        <label class="${allowed ? "tool-chip" : "tool-chip tool-chip-disabled"}">
+        <label class="${isAgentMode() ? "tool-chip" : "tool-chip tool-chip-disabled"}">
           <input
             type="checkbox"
             data-tool-name="${tool}"
             ${checked ? "checked" : ""}
-            ${!allowed || !state.config.toolsEnabled ? "disabled" : ""}
+            ${!isAgentMode() || !state.config.toolsEnabled ? "disabled" : ""}
           />
           <span>${tool}</span>
         </label>
@@ -193,6 +167,10 @@ function renderToolChips(task) {
 function renderTraceDetail(step) {
   if (step.type === "plan" || step.type === "memory_read") {
     return `<ul class="step-list">${step.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+  }
+
+  if (step.type === "router") {
+    return `<p>${escapeHtml(step.content)}</p>`;
   }
 
   if (step.type === "tool_call") {
@@ -243,10 +221,12 @@ function renderChain(step) {
   switch (step.type) {
     case "user_input":
       return `输入：${step.content}`;
-    case "plan":
-      return `计划：${step.items.join(" → ")}`;
     case "memory_read":
       return `记忆：${step.items.length} 条`;
+    case "router":
+      return `路由：${step.tools.length > 0 ? step.tools.join(", ") : "无候选工具"}`;
+    case "plan":
+      return `计划：${step.items.join(" → ")}`;
     case "decision":
       return `决策：${step.content}`;
     case "tool_call":
@@ -282,12 +262,21 @@ function renderTeachingNotes(explanations) {
   return explanations.map((item) => `<div class="note-card">${escapeHtml(item)}</div>`).join("");
 }
 
+function renderExamples() {
+  return EXAMPLES.map(
+    (example) => `
+      <button class="example-button" type="button" data-example="${example.id}">
+        ${escapeHtml(example.label)}
+      </button>
+    `
+  ).join("");
+}
+
 function render() {
-  const task = getTask(state.selectedTask);
+  const mode = getMode();
   const trace = state.result?.trace ?? [];
   const explanations = state.result?.teachingExplanations ?? [];
   const rawTrace = trace.length > 0 ? escapeHtml(trace.map((step) => JSON.stringify(step, null, 2)).join("\n\n")) : "暂无 trace";
-  const toolDisabled = task.allowedTools.length === 0;
   const sessionRounds = Math.floor(state.history.length / 2);
 
   app.innerHTML = `
@@ -303,19 +292,25 @@ function render() {
         <aside class="sidebar panel">
           <section class="sidebar-section">
             <div class="section-head">
-              <span class="section-label">场景预设</span>
+              <span class="section-label">模式</span>
               <span class="section-meta">${sessionRounds} 轮会话</span>
             </div>
-            <select id="scenario-select">${renderScenarioOptions()}</select>
-            <p class="support-copy">${task.summary}</p>
+            ${renderSegmented(
+              "mode",
+              [
+                { label: "简单问答", value: "simple_qa" },
+                { label: "Agent", value: "agent" }
+              ],
+              state.mode
+            )}
           </section>
 
           <section class="sidebar-section">
             <div class="section-head">
-              <span class="section-label">Agent 结构</span>
+              <span class="section-label">Agent 能力</span>
             </div>
 
-            <div class="control-group">
+            <div class="control-group ${isAgentMode() ? "" : "control-disabled"}">
               <div class="toggle-line">
                 <span>Tools</span>
                 <label class="toggle-wrap">
@@ -323,32 +318,40 @@ function render() {
                     id="tools-enabled"
                     type="checkbox"
                     ${state.config.toolsEnabled ? "checked" : ""}
-                    ${toolDisabled ? "disabled" : ""}
+                    ${!isAgentMode() ? "disabled" : ""}
                   />
-                  <span>${toolDisabled ? "当前场景无工具" : "启用"}</span>
+                  <span>${state.config.toolsEnabled ? "启用" : "关闭"}</span>
                 </label>
               </div>
-              <div class="chip-row">${renderToolChips(task)}</div>
+              <div class="chip-row">${renderToolChips()}</div>
             </div>
 
-            <div class="inline-grid">
-              <label class="control-group">
-                <span>Planner</span>
-                <select id="planner-mode">
-                  <option value="none" ${state.config.planner === "none" ? "selected" : ""}>none</option>
-                  <option value="simple" ${state.config.planner === "simple" ? "selected" : ""}>simple</option>
-                  <option value="step-by-step" ${state.config.planner === "step-by-step" ? "selected" : ""}>step-by-step</option>
-                </select>
-              </label>
+            <label class="control-group ${isAgentMode() ? "" : "control-disabled"}">
+              <span>Planner</span>
+              ${renderSegmented(
+                "planner",
+                [
+                  { label: "off", value: "none" },
+                  { label: "auto", value: "auto" },
+                  { label: "step", value: "step-by-step" }
+                ],
+                state.config.planner,
+                !isAgentMode()
+              )}
+            </label>
 
-              <label class="control-group">
-                <span>Memory</span>
-                <select id="memory-mode">
-                  <option value="off" ${state.config.memory === "off" ? "selected" : ""}>off</option>
-                  <option value="short-term" ${state.config.memory === "short-term" ? "selected" : ""}>short-term</option>
-                </select>
-              </label>
-            </div>
+            <label class="control-group ${isAgentMode() ? "" : "control-disabled"}">
+              <span>Memory</span>
+              ${renderSegmented(
+                "memory",
+                [
+                  { label: "off", value: "off" },
+                  { label: "short-term", value: "short-term" }
+                ],
+                state.config.memory,
+                !isAgentMode()
+              )}
+            </label>
           </section>
 
           <section class="sidebar-section">
@@ -359,7 +362,7 @@ function render() {
             <div class="inline-grid">
               <label class="control-group">
                 <span>Loop</span>
-                <select id="max-steps">
+                <select id="max-steps" ${!isAgentMode() ? "disabled" : ""}>
                   <option value="3" ${state.config.maxSteps === 3 ? "selected" : ""}>3</option>
                   <option value="5" ${state.config.maxSteps === 5 ? "selected" : ""}>5</option>
                   <option value="10" ${state.config.maxSteps === 10 ? "selected" : ""}>10</option>
@@ -370,45 +373,45 @@ function render() {
                 <span>Output</span>
                 <select id="output-mode">
                   <option value="text" ${state.config.output === "text" ? "selected" : ""}>text</option>
-                  <option value="json" ${state.config.output === "json" ? "selected" : ""}>json</option>
+                  <option value="json" ${state.config.output === "json" ? "selected" : ""}>JSON</option>
                 </select>
               </label>
             </div>
 
             <label class="control-group">
               <span>System Prompt</span>
-              <textarea id="system-prompt" rows="5">${escapeHtml(state.config.systemPrompt)}</textarea>
+              <textarea id="system-prompt" rows="4">${escapeHtml(state.config.systemPrompt)}</textarea>
             </label>
           </section>
 
-          <section class="sidebar-section sidebar-footer">
-            <button class="ghost-button" type="button" data-action="apply-recommended">推荐配置</button>
-            <button class="ghost-button" type="button" data-action="apply-risky">错误配置</button>
+          <section class="sidebar-section">
+            <div class="section-head">
+              <span class="section-label">示例输入</span>
+            </div>
+            <div class="example-grid">${renderExamples()}</div>
           </section>
         </aside>
 
         <section class="main-column">
           <section class="input-panel panel">
             <div class="input-head">
-              <div>
-                <span class="section-label">输入</span>
-              </div>
+              <span class="section-label">输入</span>
               <div class="input-actions">
-                <button class="ghost-button" type="button" data-action="clear-session">清空输出</button>
+                <button class="ghost-button" type="button" data-action="clear-output">清空输出</button>
                 <button class="ghost-button" type="button" data-action="reset-input">恢复示例</button>
                 <button class="primary-button" type="button" data-action="run-agent" ${state.running ? "disabled" : ""}>
-                  ${state.running ? "运行中…" : "运行 Agent"}
+                  ${state.running ? "运行中..." : isAgentMode() ? "运行 Agent" : "运行问答"}
                 </button>
               </div>
             </div>
-            <textarea id="user-input" rows="4" placeholder="${escapeHtml(task.placeholder)}">${escapeHtml(state.input)}</textarea>
+            <textarea id="user-input" rows="4" placeholder="${escapeHtml(mode.placeholder)}">${escapeHtml(state.input)}</textarea>
           </section>
 
           <section class="process-panel panel">
             <div class="process-head">
               <div>
                 <span class="section-label">运行过程</span>
-                <p class="support-copy">输入 → 决策 → 工具 → 返回 → 输出</p>
+                <p class="support-copy">${isAgentMode() ? "输入 → 路由 → 决策 → 工具 → 返回 → 输出" : "输入 → 单次模型调用 → 输出"}</p>
               </div>
             </div>
             <div class="process-scroll">${renderTimeline()}</div>
@@ -460,21 +463,19 @@ function render() {
 }
 
 function collectConfig() {
-  const task = getTask(state.selectedTask);
-  const enabledTools = Array.from(document.querySelectorAll("[data-tool-name]"))
-    .filter((input) => input.checked)
-    .map((input) => input.dataset.toolName)
-    .filter((tool) => task.allowedTools.includes(tool));
-
   state.input = document.querySelector("#user-input").value;
+  const toolInputs = Array.from(document.querySelectorAll("[data-tool-name]"));
+  const enabledTools = toolInputs
+    .filter((input) => input.checked)
+    .map((input) => input.dataset.toolName);
+
   state.config = {
     systemPrompt: document.querySelector("#system-prompt").value,
-    toolsEnabled: document.querySelector("#tools-enabled").checked,
-    enabledTools:
-      document.querySelector("#tools-enabled").checked && task.allowedTools.length > 0 ? enabledTools : [],
-    planner: document.querySelector("#planner-mode").value,
-    memory: document.querySelector("#memory-mode").value,
-    maxSteps: Number(document.querySelector("#max-steps").value),
+    toolsEnabled: isAgentMode() ? document.querySelector("#tools-enabled").checked : false,
+    enabledTools: isAgentMode() && document.querySelector("#tools-enabled").checked ? enabledTools : [],
+    planner: isAgentMode() ? state.config.planner : "none",
+    memory: isAgentMode() ? state.config.memory : "off",
+    maxSteps: isAgentMode() ? Number(document.querySelector("#max-steps").value) : 3,
     output: document.querySelector("#output-mode").value
   };
 }
@@ -491,6 +492,7 @@ async function handleRun() {
   render();
 
   try {
+    const mode = getMode();
     const payloadHistory = state.config.memory === "short-term" ? state.history.slice(-MAX_HISTORY_MESSAGES) : [];
     const response = await fetch(`${API_BASE}/api/run-agent`, {
       method: "POST",
@@ -498,7 +500,7 @@ async function handleRun() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        task: state.selectedTask,
+        task: mode.task,
         input: state.input,
         config: state.config,
         history: payloadHistory
@@ -527,27 +529,45 @@ async function handleRun() {
 }
 
 function bindEvents() {
-  app.querySelector("#scenario-select").addEventListener("change", (event) => {
-    setTask(event.target.value);
+  app.querySelectorAll("[data-segment='mode']").forEach((button) => {
+    button.addEventListener("click", () => {
+      setMode(button.dataset.value);
+    });
   });
 
-  app.querySelector("[data-action='apply-recommended']").addEventListener("click", () => {
-    state.config = structuredClone(getTask(state.selectedTask).recommended);
-    render();
+  app.querySelectorAll("[data-segment='planner']").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!isAgentMode()) {
+        return;
+      }
+      state.config.planner = button.dataset.value;
+      render();
+    });
   });
 
-  app.querySelector("[data-action='apply-risky']").addEventListener("click", () => {
-    state.config = structuredClone(getTask(state.selectedTask).risky);
-    render();
+  app.querySelectorAll("[data-segment='memory']").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!isAgentMode()) {
+        return;
+      }
+      state.config.memory = button.dataset.value;
+      render();
+    });
   });
 
-  app.querySelector("[data-action='clear-session']").addEventListener("click", () => {
+  app.querySelectorAll("[data-example]").forEach((button) => {
+    button.addEventListener("click", () => {
+      applyExample(button.dataset.example);
+    });
+  });
+
+  app.querySelector("[data-action='clear-output']").addEventListener("click", () => {
     clearOutputState();
     render();
   });
 
   app.querySelector("[data-action='reset-input']").addEventListener("click", () => {
-    state.input = getTask(state.selectedTask).placeholder;
+    state.input = getMode().placeholder;
     clearOutputState();
     render();
   });
@@ -564,13 +584,9 @@ function bindEvents() {
     state.config.systemPrompt = event.target.value;
   });
 
-  app.querySelector("#tools-enabled").addEventListener("change", (event) => {
+  app.querySelector("#tools-enabled")?.addEventListener("change", (event) => {
     state.config.toolsEnabled = event.target.checked;
-    if (!event.target.checked) {
-      state.config.enabledTools = [];
-    } else {
-      state.config.enabledTools = [...getTask(state.selectedTask).allowedTools];
-    }
+    state.config.enabledTools = event.target.checked ? ["getWeather", "readWebPage"] : [];
     render();
   });
 
@@ -580,7 +596,7 @@ function bindEvents() {
     });
   });
 
-  ["#planner-mode", "#memory-mode", "#max-steps", "#output-mode"].forEach((selector) => {
+  ["#max-steps", "#output-mode"].forEach((selector) => {
     app.querySelector(selector).addEventListener("change", () => {
       collectConfig();
     });
