@@ -21,6 +21,15 @@ type ChatMessage = {
 
 export async function callLlm(messages: ChatMessage[]): Promise<string> {
   let response: Response;
+  const body = {
+    model: env.LLM_MODEL,
+    messages,
+    thinking: {
+      type: env.LLM_THINKING_TYPE
+    },
+    reasoning_effort: env.LLM_REASONING_EFFORT,
+    stream: false
+  };
 
   try {
     response = await fetch(`${env.LLM_BASE_URL}/chat/completions`, {
@@ -29,12 +38,7 @@ export async function callLlm(messages: ChatMessage[]): Promise<string> {
         Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        model: env.LLM_MODEL,
-        stream: false,
-        temperature: 0.2,
-        messages
-      })
+      body: JSON.stringify(body)
     });
   } catch (error) {
     const cause = error instanceof Error && "cause" in error ? (error as Error & { cause?: unknown }).cause : undefined;

@@ -68,6 +68,7 @@ const app = document.querySelector("#app");
 const runtimeConfig = window.__AGENT_SANDBOX_CONFIG__ || {};
 const API_BASE = String(runtimeConfig.apiBase || "").replace(/\/$/, "");
 const MAX_HISTORY_MESSAGES = 8;
+const MAX_HISTORY_CONTENT_CHARS = 360;
 
 const state = {
   mode: "agent",
@@ -485,6 +486,16 @@ function clearOutputState() {
   state.error = "";
 }
 
+function compactHistory(history) {
+  return history.slice(-MAX_HISTORY_MESSAGES).map((message) => ({
+    role: message.role,
+    content:
+      message.content.length > MAX_HISTORY_CONTENT_CHARS
+        ? `${message.content.slice(0, MAX_HISTORY_CONTENT_CHARS)}...`
+        : message.content
+  }));
+}
+
 async function handleRun() {
   collectConfig();
   clearOutputState();
@@ -493,7 +504,7 @@ async function handleRun() {
 
   try {
     const mode = getMode();
-    const payloadHistory = state.config.memory === "short-term" ? state.history.slice(-MAX_HISTORY_MESSAGES) : [];
+    const payloadHistory = state.config.memory === "short-term" ? compactHistory(state.history) : [];
     const response = await fetch(`${API_BASE}/api/run-agent`, {
       method: "POST",
       headers: {
@@ -518,7 +529,7 @@ async function handleRun() {
         { role: "user", content: state.input },
         { role: "assistant", content: payload.output }
       );
-      state.history = state.history.slice(-MAX_HISTORY_MESSAGES);
+      state.history = compactHistory(state.history);
     }
   } catch (error) {
     state.error = error instanceof Error ? error.message : "运行失败";
